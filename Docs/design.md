@@ -2,6 +2,9 @@
 
 Living design note, started 2026-09-12. Code refers to it by section (`// §3.2`).
 
+**ON HOLD since 2026-09-12**, by the owner's choice: the basic idea is proven in Live (§8.1, findings), and
+§9-§11 are ideas recorded for when work resumes. The next step then would be the listener (§9.2).
+
 ---
 
 ## 1. The idea
@@ -89,6 +92,127 @@ Sources: https://forum.juce.com/t/midi-effect-for-ableton/32455 ,
 https://help.ableton.com/hc/en-us/articles/209070189-Accessing-the-MIDI-output-of-a-VST-plug-in ,
 https://forum.ableton.com/viewtopic.php?t=229629 , and the VST3 SDK's own headers
 (`ivstevents.h`, `ivstaudioprocessor.h`) for the event output bus.
+
+## 9. Where it is going - a live generative instrument
+
+**9.1 The owner's direction** (2026-09-12): if the loop idea works, the real use is LIVE - played into,
+it reacts to the notes and controllers it is given and generates from them; and, since that is open
+ended, it may also generate ideas from scratch. The learn-a-loop mode of §2 and §8 is the first case
+of that, not the whole of it.
+
+**9.2 Listener and generators.** The shape this suggests:
+
+- A LISTENER that models what is coming in, continuously rather than one fixed pass: a rolling
+  history of notes, the grid they sit on, density and velocity, the key or scale in use, and - when
+  the input does loop - its length (§2, and the loop detection still to build).
+- GENERATORS that read the listener and produce: the ratchet of §8.1; echoes and continuations of what
+  was just played; answers (call and response); fills (§3.2); and patterns from nothing - euclidean
+  rhythms, or a Markov model of what has been heard - for when there is no input to follow.
+- The macro dials (§3) choose and blend the generators rather than tuning one.
+
+**9.3 What it asks of the plumbing.**
+
+- CONTROLLER INPUT: a VST3 host delivers CCs as PARAMETER changes, through IMidiMapping - there are no
+  CC input events. Hearing arbitrary controllers means mapping them onto (hidden) parameters, the way
+  G2 Alike maps the mod wheel, aftertouch and bend. A SynthLib question: the contract maps a fixed set.
+- CONTROLLER OUTPUT: Live forwards a VST3's notes but not its CCs or bend (§5). Generated controllers
+  for Live would need another route - a virtual CoreMIDI port of the plug-in's own, which a Live track
+  can take as MIDI input; MidiSyncTool already schedules MIDI to a port against the host's timeline.
+- LATENCY: an answer has to land in time - on the host's grid, scheduled ahead where it can be,
+  in the same block as the note that prompted it where it cannot.
+- DETERMINISM stays (§3.6): a seed, so a performance can be re-run.
+
+**9.4 Call and response - the first live function** (owner, 2026-09-12): it hears a phrase, and answers
+it.
+
+- WHEN A CALL ENDS - two ways, a setting: a rest longer than a threshold (in beats), for free playing;
+  or on the grid, the call filling N bars and the answer the next N, for a groove.
+- WHAT THE ANSWER IS MADE OF - the call, transformed: its rhythm kept or varied, its contour echoed,
+  inverted or turned to resolve (a question answered by a phrase that comes home to the tonic of the
+  key the listener has inferred), in the same register or moved, denser or sparser.
+- THE DIALS - Similarity (echo at one end, contrast at the other), Length, Density, Register; seeded,
+  so an answer that worked can be kept.
+- AND WHEN THE PLAYER STOPS, it can go on answering itself - which is §9.2's "from scratch" arriving by
+  another door.
+- It needs the listener's key and grid (§9.2), and notes only - so Live's two-track routing carries it.
+
+**9.5 Not now.** Recorded so the next steps do not paint it into a corner: the loop learner should
+become one listener mode, not the structure everything else hangs off.
+
+## 10. Melodic generation - a 303-style step generator
+
+**10.1 The model** (owner, 2026-09-12: "something very much like Roland's TB-303 software generator").
+Roland's TB-303 plug-in has two randomise functions working from settings for Pitch, Gate, Accent and
+Slide inside a definable scale and key range: GENERATE (a new pattern) and MODIFY (a variation of the
+current one), with play modes Forward, Reverse, Forward-and-Reverse, Invert and Random. The same shape
+here, as one of §9.2's generators.
+
+**10.2 What the notes may be.**
+
+- Root note, and a 12-note ENABLE mask - which pitch classes are allowed. Scale presets fill the mask
+  (major, the minors, the modes, pentatonics, blues, chromatic); any key can then be switched by hand.
+- Or LEARNED: the mask and root taken from what the listener has heard (§9.2), for playing along.
+- Range: a lowest note and a number of octaves (the Roland reaches six); weighting towards the root
+  and fifth, and a leap-versus-step control for how far one note jumps from the last.
+
+**10.3 A step** carries a pitch, an octave shift, a gate (a rest when off), an accent and a slide. The
+pattern has a length in steps (16 to start) and a rate (16ths to start).
+
+**10.4 The dials** - probability of a gate (density), of an accent, of a slide, of an octave jump; the
+leap control; GENERATE and MODIFY (how many steps a Modify touches); a seed, so a pattern can be kept.
+
+**10.5 Out as MIDI.** Accent is velocity. A slide is LEGATO - the next note-on before this note-off - so a
+synth set to legato portamento glides; the plug-in cannot make a synth glide on its own. Notes only,
+which Live's two-track routing carries (§5).
+
+**10.6 Controls before a panel.** Every setting above is a host parameter first - the 12-note mask as
+12 switches works in a host's generic panel - and the panel (§7 of the open questions) comes when there
+is something worth drawing: a keyboard strip for the mask, the step grid, the dials.
+
+Source: https://articles.roland.com/mastering-the-tb-303-sequencer-in-roland-cloud/ , and the product
+descriptions linked from the conversation of 2026-09-12.
+
+## 11. Prior art - algorithmic approaches (surveyed 2026-09-12)
+
+**11.1 Rule-based and probabilistic** - cheap, predictable, proven in hardware.
+
+- Euclidean rhythms: k hits spread as evenly as possible over n steps - a vast set of world rhythms
+  from one rule. Good for patterns from nothing.
+- Drum-pattern maps: Mutable Instruments' Grids interpolates across a map of real patterns with an X/Y
+  position and a density per instrument - close to §3's Density, Fill and Intensity.
+- The shift-register "Turing Machine" (Music Thing Modular): a locked loop mutated by a probability
+  knob - the Evolve dial of §3.5.
+- Markov chains, L-systems, cellular automata.
+
+**11.2 Learning the player live** - the family for call and response (§9.4).
+
+- The Continuator (Pachet, Sony CSL, early 2000s): a variable-order Markov model built from the player's
+  phrases as they play, answering in their style.
+- OMax and Somax2 (IRCAM): a factor oracle learns a performer's material live and recombines it,
+  Somax2 steered by what is being played.
+- No dataset, no GPU, microseconds per decision, and what they do can be read - they fit the listener.
+
+**11.3 Neural symbolic models.**
+
+- Magenta (Google): MusicVAE (a latent space to morph through - a macro dial), GrooVAE (a quantised drum
+  part made human), Music Transformer. Apache 2.0, compatible with this project's GPLv3.
+- The Anticipatory Music Transformer (Stanford, 2023): generation conditioned on events still to come -
+  infilling and accompaniment.
+- Real-time jamming, 2025-26: ReaLJam (a transformer tuned by reinforcement learning for live jamming,
+  generating ahead to hide latency); language-model jamming for live accompaniment; latent-diffusion
+  accompaniment in Max/MSP; SongDriver (2022), accompaniment with no latency from the model itself.
+- Google's live music models (Magenta RealTime / Lyria, 2025) are real-time but AUDIO, not MIDI.
+- The costs: weights, on-device inference (Core ML on a Mac), training data, latency management, and
+  licences that differ model to model.
+
+**11.4 What would suit this plug-in.** Drums: Grids-style maps and Turing-Machine mutation, Euclidean
+patterns from nothing. Melody: §10's constrained random. Call and response: a Continuator or factor
+oracle learned from the player - the core of the listener. A small neural model through Core ML later,
+if at all, once the rest works.
+
+Sources: https://arxiv.org/html/2604.07612 , https://arxiv.org/pdf/2606.11886 ,
+https://www.researchgate.net/publication/391152101 , https://arxiv.org/pdf/2209.06054 ,
+https://gclef-cmu.org/static/pdfs/2025magentart.pdf ; the rest from general knowledge, unchecked.
 
 ## 6. What SynthLib needs
 
