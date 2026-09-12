@@ -1,0 +1,9 @@
+#!/bin/zsh
+# Builds tools/msqtest, the offline check - see its header.
+set -e
+HERE="$(cd "$(dirname "$0")" && pwd)"
+SDK="${VST3_SDK:-$HOME/Documents/vst3sdk}"
+clang++ -std=gnu++17 -O1 -Wall -I"$SDK" "$HERE/msqtest.cpp" "$SDK/pluginterfaces/base/funknown.cpp" \
+        "$SDK/pluginterfaces/base/coreiids.cpp" "$SDK/public.sdk/source/vst/vstinitiids.cpp" \
+        -framework CoreFoundation -o "$HERE/msqtest"
+print "built $HERE/msqtest"

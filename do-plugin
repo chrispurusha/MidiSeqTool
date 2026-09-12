@@ -1,0 +1,364 @@
+#!/bin/zsh
+# Build the MidiSeqTool plug-in.
+#
+#   ./do-plugin            the VST3, and installs it
+#   ./do-plugin vst3       the same
+#   ./do-plugin au         the Audio Unit - no MIDI output yet (design §5.3)
+#   ./do-plugin --no-install
+#
+# Follows MidiSyncTool's do-plugin: one source list compiled once, SynthLib's wrappers per format.
+# The VST3 half needs ~/Documents/vst3sdk (or $VST3_SDK). Each bundle is installed as soon as it is
+# built, and unquarantined; MSQ_NO_INSTALL=1 or --no-install leaves the installed copy alone.
+# $SYNTHLIB_DIR points the build at another SynthLib checkout.
+
+set -e
+
+HERE="$(cd "$(dirname "$0")" && pwd)"
+SDK="${VST3_SDK:-$HOME/Documents/vst3sdk}"
+SL="${SYNTHLIB_DIR:-$HERE/SynthLib}"
+
+FORMATS=()
+INSTALL=1
+
+if [[ -n "$MSQ_NO_INSTALL" ]]; then
+    INSTALL=0
+fi
+
+for arg in "$@"; do
+    case "$arg" in
+        vst3|VST3)       FORMATS+=(vst3) ;;
+        au|AU|audiounit) FORMATS+=(au) ;;
+        all)             FORMATS=(vst3 au) ;;
+        --no-install)    INSTALL=0 ;;
+        *)
+            print -u2 "usage: ${0:t} [vst3|au|all] [--no-install]"
+            exit 2
+            ;;
+    esac
+done
+
+if [[ ${#FORMATS[@]} -eq 0 ]]; then
+    FORMATS=(vst3)     # design §5.3 - the Audio Unit has no MIDI output yet
+fi
+
+DEFAULT_OUT_DIR="$HERE/build"
+OUT_DIR="${MSQ_PLUGIN_OUT_DIR:-$DEFAULT_OUT_DIR}"
+
+# A BUILD SENT SOMEWHERE ELSE IS NOT A BUILD TO INSTALL, and the guard exists because the omission was
+# made and did real damage: building an old revision for an A/B into /tmp and installing it put a
+# stale plug-in into the VST3 folder under another NAME, declaring the SAME class ids. A host indexes
+# by class id, so it then had two bundles claiming to be this plug-in and was free to load either.
+if [[ "$OUT_DIR" != "$DEFAULT_OUT_DIR" ]] && [[ $INSTALL -eq 1 ]]; then
+    print "Not installing: MSQ_PLUGIN_OUT_DIR names a build of its own, not the working copy."
+    INSTALL=0
+fi
+
+PLUGIN_NAME="MidiSeqTool"
+MSQ_VERSION="${MSQ_VERSION:-0.1.0}"
+
+# The Audio Unit wants the same version as a number, 0xMMMMmmbb - worked out here and passed to the
+# compiler too, so the plist and the component's own answer cannot disagree.
+VERSION_CORE="${MSQ_VERSION%%-*}"
+VERSION_PARTS=(${(s:.:)VERSION_CORE})
+AU_VERSION=$(( (${VERSION_PARTS[1]:-0} << 16) | (${VERSION_PARTS[2]:-0} << 8) | ${VERSION_PARTS[3]:-0} ))
+
+# THESE MUST MATCH vst3/msqPlugin.c - the bundle identifier especially, which the wrapper looks its own
+# bundle up by to find the editor's view class.
+AU_TYPE="aumu"
+AU_SUBTYPE="MSeq"
+AU_MANUFACTURER="CPur"
+AU_BUNDLE_ID="com.chrispurusha.midiseqtool.au"
+VST3_BUNDLE_ID="com.chrispurusha.midiseqtool.vst3"
+
+# The Objective-C class the Audio Unit publishes its editor under. Class names are global to the
+# process, so this has to be MidiSeqTool's own - see synthlibPluginAuView.m.
+AU_VIEW_CLASS="MidiSeqToolAUView"
+
+VST3_INSTALL_DIR="${MSQ_VST3_INSTALL:-/Library/Audio/Plug-Ins/VST3}"
+AU_INSTALL_DIR="${MSQ_AU_INSTALL:-/Library/Audio/Plug-Ins/Components}"
+
+if (( ${FORMATS[(I)vst3]} )) && [[ ! -d "$SDK/pluginterfaces" ]]; then
+    print -u2 "error: VST3 SDK not found at $SDK"
+    print -u2 "       set VST3_SDK to its location, or build the Audio Unit alone with: ${0:t} au"
+    exit 1
+fi
+
+
+# ------------------------------------------------------------------------------------------------
+# MidiSeqTool itself - compiled once, linked into every format
+# ------------------------------------------------------------------------------------------------
+
+SOURCES=(
+    "$SL/plugin/synthlibLog.c"
+    "$HERE/src/msqLoop.c"
+    "$HERE/vst3/msqPlugin.c"
+    "$SL/plugin/pluginStubs.c"
+    "$SL/plugin/synthlibPluginState.c"
+    "$SL/src/synthlibHost.c"
+    "$SL/src/utils.c"
+)
+
+OBJC_SOURCES=()
+
+# ------------------------------------------------------------------------------------------------
+# FORMAT-SPECIFIC - all of it SynthLib's
+# ------------------------------------------------------------------------------------------------
+
+VST3_CXX_SOURCES=(
+    "$SL/plugin/synthlibPluginVst3.cpp"
+    "$SDK/pluginterfaces/base/funknown.cpp"
+    "$SDK/pluginterfaces/base/coreiids.cpp"
+    "$SDK/public.sdk/source/vst/vstinitiids.cpp"
+    "$SDK/public.sdk/source/common/commoniids.cpp"
+    "$SDK/pluginterfaces/base/ustring.cpp"
+    "$SDK/pluginterfaces/base/conststringtable.cpp"
+)
+
+VST3_OBJCXX_SOURCES=(
+    "$SL/plugin/synthlibPluginVst3View.mm"
+)
+
+AU_C_SOURCES=(
+    "$SL/plugin/synthlibPluginAu.c"
+)
+
+AU_OBJC_SOURCES=(
+    "$SL/plugin/synthlibPluginAuView.m"
+)
+
+# ------------------------------------------------------------------------------------------------
+# Flags
+# ------------------------------------------------------------------------------------------------
+
+WARNFLAGS=(-Wall -Wextra)
+
+# SYNTHLIB_PLUGIN_BUILD is SynthLib's "this is a plug-in, there is no GLFW" - G2_VST3_BUILD until the
+# plug-ins gained a second format. An ARRAY, so the version define keeps its own quotes.
+DEFS=(-DSYNTHLIB_PLUGIN_BUILD=1 -DMSQ_VERSION_STRING="\"$MSQ_VERSION\"" -DMSQ_AU_VERSION=$AU_VERSION )
+
+# glfw and freetype for their HEADERS ONLY - SynthLib's headers name their types; nothing is linked.
+INCLUDES=(-I"$HERE/src" -I"$HERE/vst3" -I"$SL/src" -I"$SL/audio" -I"$SL/plugin"
+          -I"$SL/ThirdParty/glfw/include" -I"$SL/ThirdParty/freetype/include")
+
+VST3_INCLUDES=(-I"$SDK")
+
+ARCHS=(-arch arm64 -arch x86_64)
+MIN=-mmacosx-version-min=11.5
+
+COMMON_LIBS=(-framework CoreFoundation -framework CoreAudio -framework CoreMIDI -framework Cocoa
+             -framework Metal -framework QuartzCore)
+AU_LIBS=(-framework AudioToolbox -framework AudioUnit)
+
+OBJDIR="$(mktemp -d)"
+trap 'rm -rf "$OBJDIR"' EXIT
+
+print "MidiSeqTool $MSQ_VERSION - ${FORMATS} (arm64 + x86_64)"
+
+# ------------------------------------------------------------------------------------------------
+# Compile
+# ------------------------------------------------------------------------------------------------
+
+COMMON_OBJECTS=()
+
+for src in "${SOURCES[@]}"; do
+    obj="$OBJDIR/$(basename "${src%.*}").o"
+    clang $ARCHS $MIN -O2 -std=gnu11 "${WARNFLAGS[@]}" "${DEFS[@]}" "${INCLUDES[@]}" -c "$src" -o "$obj"
+    COMMON_OBJECTS+=("$obj")
+done
+
+for src in "${OBJC_SOURCES[@]}"; do
+    obj="$OBJDIR/$(basename "${src%.*}").om"
+    clang $ARCHS $MIN -O2 -std=gnu11 -fobjc-arc "${WARNFLAGS[@]}" "${DEFS[@]}" "${INCLUDES[@]}" \
+          -x objective-c -c "$src" -o "$obj"
+    COMMON_OBJECTS+=("$obj")
+done
+
+# ------------------------------------------------------------------------------------------------
+# Bundle up
+# ------------------------------------------------------------------------------------------------
+
+sign_bundle() {
+    codesign --force --sign - "$1" 2>/dev/null || print -u2 "warning: ad-hoc signing failed for $1"
+}
+
+# REPLACED, not copied over: cp -R onto an existing bundle MERGES, so a file dropped from the build
+# would survive in the installed copy and go on being loaded.
+install_bundle() {
+    local bundle=$1
+    local dest=$2
+    local other=$3
+    local name="${bundle:t}"
+
+    if [[ $INSTALL -ne 1 ]]; then
+        return
+    fi
+
+    if [[ ! -d $dest ]]; then
+        print -u2 "warning: $dest does not exist - not installing $name"
+        return
+    fi
+
+    if [[ -d "$other/$name" ]]; then
+        print -u2 "warning: another copy is installed at $other/$name - your host may load that one"
+    fi
+
+    if ! rm -rf "$dest/$name" 2>/dev/null || ! cp -R "$bundle" "$dest/" 2>/dev/null; then
+        print -u2 "warning: could not install into $dest (permission?) - $name left in $OUT_DIR"
+        return
+    fi
+    xattr -dr com.apple.quarantine "$dest/$name" 2>/dev/null || true
+    print "    installed: $dest/$name"
+    INSTALLED+=("$dest/$name")
+}
+
+BUILT=()
+INSTALLED=()
+
+build_vst3() {
+    local out="$OUT_DIR/$PLUGIN_NAME.vst3"
+    local bin="$out/Contents/MacOS/$PLUGIN_NAME"
+    local objects=("${COMMON_OBJECTS[@]}")
+
+    print "==> VST3"
+
+    for src in "${VST3_CXX_SOURCES[@]}"; do
+        local obj="$OBJDIR/vst3_$(basename "${src%.*}").oxx"
+        clang++ $ARCHS $MIN -O2 -std=gnu++17 "${WARNFLAGS[@]}" "${DEFS[@]}" \
+                "${INCLUDES[@]}" "${VST3_INCLUDES[@]}" -c "$src" -o "$obj"
+        objects+=("$obj")
+    done
+
+    for src in "${VST3_OBJCXX_SOURCES[@]}"; do
+        local obj="$OBJDIR/vst3_$(basename "${src%.*}").omm"
+        clang++ $ARCHS $MIN -O2 -std=gnu++17 -fobjc-arc "${WARNFLAGS[@]}" "${DEFS[@]}" \
+                "${INCLUDES[@]}" "${VST3_INCLUDES[@]}" -x objective-c++ -c "$src" -o "$obj"
+        objects+=("$obj")
+    done
+
+    rm -rf "$out"
+    mkdir -p "$out/Contents/MacOS"
+    clang++ $ARCHS $MIN -bundle "${objects[@]}" "${COMMON_LIBS[@]}" -o "$bin"
+
+    cat > "$out/Contents/Info.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleExecutable</key><string>$PLUGIN_NAME</string>
+    <key>CFBundleIdentifier</key><string>$VST3_BUNDLE_ID</string>
+    <key>CFBundleName</key><string>$PLUGIN_NAME</string>
+    <key>CFBundlePackageType</key><string>BNDL</string>
+    <key>CFBundleSignature</key><string>????</string>
+    <key>CFBundleShortVersionString</key><string>$MSQ_VERSION</string>
+    <key>CFBundleVersion</key><string>$MSQ_VERSION</string>
+    <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+    <key>LSMinimumSystemVersion</key><string>11.5</string>
+</dict>
+</plist>
+PLIST
+
+    printf 'BNDL????' > "$out/Contents/PkgInfo"
+    sign_bundle "$out"
+    BUILT+=("$out")
+    install_bundle "$out" "$VST3_INSTALL_DIR" "$HOME/Library/Audio/Plug-Ins/VST3"
+}
+
+build_au() {
+    local out="$OUT_DIR/$PLUGIN_NAME.component"
+    local bin="$out/Contents/MacOS/$PLUGIN_NAME"
+    local objects=("${COMMON_OBJECTS[@]}")
+
+    print "==> Audio Unit"
+
+    for src in "${AU_C_SOURCES[@]}"; do
+        local obj="$OBJDIR/au_$(basename "${src%.*}").o"
+        clang $ARCHS $MIN -O2 -std=gnu11 "${WARNFLAGS[@]}" "${DEFS[@]}" "${INCLUDES[@]}" \
+              -c "$src" -o "$obj"
+        objects+=("$obj")
+    done
+
+    for src in "${AU_OBJC_SOURCES[@]}"; do
+        local obj="$OBJDIR/au_$(basename "${src%.*}").om"
+        clang $ARCHS $MIN -O2 -std=gnu11 -fobjc-arc "${WARNFLAGS[@]}" "${DEFS[@]}" "${INCLUDES[@]}" \
+              -DSYNTHLIB_AU_VIEW_CLASS=$AU_VIEW_CLASS -x objective-c -c "$src" -o "$obj"
+        objects+=("$obj")
+    done
+
+    rm -rf "$out"
+    mkdir -p "$out/Contents/MacOS"
+    clang++ $ARCHS $MIN -bundle "${objects[@]}" \
+            "${COMMON_LIBS[@]}" "${AU_LIBS[@]}" -o "$bin"
+
+    # THE AudioComponents ARRAY IS HOW macOS FINDS AN AUDIO UNIT AT ALL - the component manager reads
+    # the plist, not the binary.
+    #
+    cat > "$out/Contents/Info.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleExecutable</key><string>$PLUGIN_NAME</string>
+    <key>CFBundleIdentifier</key><string>$AU_BUNDLE_ID</string>
+    <key>CFBundleName</key><string>$PLUGIN_NAME</string>
+    <key>CFBundlePackageType</key><string>BNDL</string>
+    <key>CFBundleSignature</key><string>????</string>
+    <key>CFBundleShortVersionString</key><string>$MSQ_VERSION</string>
+    <key>CFBundleVersion</key><string>$MSQ_VERSION</string>
+    <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+    <key>LSMinimumSystemVersion</key><string>11.5</string>
+    <key>AudioComponents</key>
+    <array>
+        <dict>
+            <key>name</key><string>Chris Purusha: MidiSeqTool</string>
+            <key>description</key><string>MidiSeqTool - learns a MIDI part and plays it back evolving</string>
+            <key>factoryFunction</key><string>SynthLibAUFactory</string>
+            <key>type</key><string>$AU_TYPE</string>
+            <key>subtype</key><string>$AU_SUBTYPE</string>
+            <key>manufacturer</key><string>$AU_MANUFACTURER</string>
+            <key>version</key><integer>$AU_VERSION</integer>
+            <key>sandboxSafe</key><false/>
+        </dict>
+    </array>
+</dict>
+</plist>
+PLIST
+
+    printf 'BNDL????' > "$out/Contents/PkgInfo"
+    sign_bundle "$out"
+    BUILT+=("$out")
+    install_bundle "$out" "$AU_INSTALL_DIR" "$HOME/Library/Audio/Plug-Ins/Components"
+
+    # THE REGISTRY CACHES, and a REPLACED component is worse than a new one: a host goes on using the
+    # version the registrar last saw. Killing it is the documented way to force a rescan.
+    if [[ $INSTALL -eq 1 ]]; then
+        killall -9 AudioComponentRegistrar 2>/dev/null || true
+    fi
+}
+
+mkdir -p "$OUT_DIR"
+
+for fmt in "${FORMATS[@]}"; do
+    case "$fmt" in
+        vst3) build_vst3 ;;
+        au)   build_au ;;
+    esac
+done
+
+print ""
+
+for bundle in "${BUILT[@]}"; do
+    print "Built: $bundle  ($(lipo -archs "$bundle/Contents/MacOS/$PLUGIN_NAME"))"
+done
+
+if [[ ${#INSTALLED[@]} -gt 0 ]]; then
+    print "Installed ${#INSTALLED[@]} of ${#BUILT[@]}; a host picks them up on its next scan."
+elif [[ $INSTALL -eq 1 ]]; then
+    print "NOTHING WAS INSTALLED - see the warnings above."
+else
+    print "Not installed."
+fi
+
+print ""
+print "Logging is OFF until the gate file exists:"
+print "    touch /tmp/midiseqtool-log     # then reload the plug-in in the host"
+print "    tail -f /tmp/midiseqtool.log"
