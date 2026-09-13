@@ -3,7 +3,8 @@
 Living design note, started 2026-09-12. Code refers to it by section (`// §3.2`).
 
 **ON HOLD since 2026-09-12**, by the owner's choice: the basic idea is proven in Live (§8.1, findings), and
-§9-§11 are ideas recorded for when work resumes. The next step then would be the listener (§9.2).
+§9-§12 are ideas recorded for when work resumes. The next step then would be the listener (§9.2).
+§12 is the route to having it inline on a MIDI track in Live: a Max for Live device sharing the C core.
 
 ---
 
@@ -63,7 +64,7 @@ note decided in one block can fall due in a later one.
 **5.1 Ableton Live cannot load a third-party MIDI EFFECT** - VST3 or AU. Its MIDI-effect slot takes
 only its own devices and Max for Live ones: "the only MIDI effects you can put in a track before an
 instrument are the internal ones" (JUCE forum, still true at Live 11.1; nothing found saying Live 12
-changed it).
+changed it). The one inline route is a Max for Live device around the same C core (§12).
 
 **5.2 What Live does support - and documents** ("Accessing the MIDI output of a VST plug-in", Ableton
 help): the plug-in sits on a track of its own, and a SECOND track takes "MIDI From" that track,
@@ -213,6 +214,52 @@ if at all, once the rest works.
 Sources: https://arxiv.org/html/2604.07612 , https://arxiv.org/pdf/2606.11886 ,
 https://www.researchgate.net/publication/391152101 , https://arxiv.org/pdf/2209.06054 ,
 https://gclef-cmu.org/static/pdfs/2025magentart.pdf ; the rest from general knowledge, unchecked.
+
+## 12. Inline in Live - a Max for Live device (added 2026-09-12)
+
+**12.1 Why.** Live's MIDI-effect section takes only its own devices and Max for Live ones (§5.1). No
+plug-in registration changes that, whether instrument, effect or `aumi`, and a plug-in's MIDI output never passes down its
+own track's chain. A Max for Live MIDI Effect device (`.amxd`) is the only way to have MidiSeqTool on
+the MIDI track itself, before the instrument, with no second track. The owner has Live 12 Suite
+(12.4.5, which includes Max for Live) and standalone Max 9.1.4.
+
+**12.2 Shape.** The logic stays in C and is shared. `msqLoop.c`, and later the listener and
+generators, is compiled twice: into the VST3, and into a Max external (`.mxo`). The external is a thin
+wrapper: notes in, transport position in, notes out. The device routes `[midiin]` through the external
+to `[midiout]`. Its controls are `live.dial` / `live.menu` objects, which Live automates and saves with
+the set, so no SynthLib GUI code is needed.
+
+**12.3 What it gains over the plug-in.**
+
+- It sits inline on the MIDI track.
+- The Live API: `live.path` / `live.observer` read the playing clip's `loop_start`, `loop_end` and
+  `length`. That is the loop length §8.2 wanted, read from Live instead of assumed. Tempo and song
+  position come from `[transport]` / `[plugsync~]`.
+- `[midiout]` in a MIDI effect passes any MIDI to the next device, CCs and pitch bend included. That
+  avoids the notes-only limit Live puts on a VST3's output (§5.2), but it needs checking.
+
+**12.4 What it costs.**
+
+- Timing: Max for Live runs Max's scheduler inside Live's audio processing, so events land on
+  signal-vector boundaries (typically 64 samples, about 1.5 ms at 44.1 kHz), not on the exact sample
+  offsets of §4.2. Fine for sequencing; to be checked by ear.
+- Everyone who uses the device needs Max for Live (Suite, or the add-on).
+- Freezing the `.amxd` can bundle the external, but only for the platforms it was built for.
+- Two front ends to keep: the plug-in's and the device's.
+
+**12.5 Build.** The Max SDK (Cycling '74, on GitHub) is its C API; the Min-DevKit C++ layer is not
+needed. The licence is believed to be MIT; confirm it before use and record it in `THIRD_PARTY.md`. A
+`do-max` script, like `do-plugin`, would build a universal `.mxo`, ad-hoc sign it, and install it
+where Max finds it. Which user folder Live's bundled Max searches (`~/Documents/Max 9/Packages/...`, or
+beside the device) is still to be confirmed.
+
+**12.6 First step when resumed.** A pass-through external (notes in, notes out) in a MIDI Effect
+device, plus a `live.observer` reading the playing clip's loop length. That proves the build, the
+load, the inline placement and the loop-length read before any of `msqLoop.c` goes in. Then
+`msqLoop.c` inside it, taking its pass length from Live instead of the fixed 4 bars.
+
+Sources: general knowledge of Max and Max for Live, unchecked. The licence, the scheduler granularity
+and the CC pass-through are the claims to verify first.
 
 ## 6. What SynthLib needs
 

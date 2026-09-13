@@ -8,6 +8,11 @@ ON HOLD since 2026-09-12 (design.md, top). When resuming: the listener first (de
 - SynthLib: the MIDI output (done for VST3) - push it, and pull it into the siblings; the AU half (a MIDI processor) later
 - §8.1: learn 4 bars, pass them through, then replay them with a ratchet after every note; checked in Live through the two-track "MIDI From" routing (§5.2)
 
+## Inline in Live - Max for Live (design §12)
+- Confirm the Max SDK's licence, the scheduler granularity in Max for Live, and that [midiout] in a MIDI Effect device passes CCs and bend
+- Pass-through external (.mxo, universal, ad-hoc signed, via a do-max script) in a MIDI Effect device, with a live.observer reading the playing clip's loop length
+- Then msqLoop.c inside the external, its pass length taken from Live instead of the fixed 4 bars
+
 ## Direction (design §9)
 - Split the loop learner into a listener (rolling history, grid, density, key, loop length) and generators, before adding more generators
 - Controller input: map CCs onto hidden parameters (IMidiMapping) - a SynthLib contract question
