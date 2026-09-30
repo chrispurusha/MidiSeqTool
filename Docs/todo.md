@@ -4,6 +4,9 @@ One line per item, grouped by area. Measurements, reasoning and completed work g
 
 ON HOLD since 2026-09-12 (design.md, top). When resuming: the listener first (design §9.2).
 
+General
+- Elektron devices seem to not change latency alignment when applying calculated value
+- For devices which have a driver for re-sampling different sample rates, we might need to just sync with host sample rate. Possibly need a switch for that, or select a sample rate option as host-sync.
 ## First steps (design.md §8)
 - SynthLib: the MIDI output (done for VST3) - push it, and pull it into the siblings; the AU half (a MIDI processor) later
 - §8.1: learn 4 bars, pass them through, then replay them with a ratchet after every note; checked in Live through the two-track "MIDI From" routing (§5.2)
