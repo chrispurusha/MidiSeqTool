@@ -4,7 +4,11 @@ A MIDI effect plug-in that listens to a MIDI part for a number of bars, passes i
 first time, and on every pass after that plays it back **mutated** - fills, extra notes woven into the
 groove, changes of feel, rising and falling intensity - steered by a handful of macro dials.
 
-**Status: on hold (2026-09-12), after the first, simplest version.** It learns four bars, passes them through, then plays them
+## Working with LLMs
+
+Development started as a solo project. As the project has evolved, I've recently incorporated LLM-assisted development into the workflow, using it as a tool for research, coding, debugging, and experimentation.
+
+## Status: on hold (2026-09-12), after the first, simplest version.** It learns four bars, passes them through, then plays them
 back with a ratchet after every note. VST3 only; in Ableton Live it is used through two-track routing
 (see [`Docs/design.md`](Docs/design.md) §5). `tools/msqtest` checks it offline.
 
