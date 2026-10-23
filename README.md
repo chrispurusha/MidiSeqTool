@@ -17,7 +17,7 @@ back with a ratchet after every note. VST3 only; in Ableton Live it is used thro
 One of a family that shares [SynthLib](https://github.com/chrispurusha/SynthLib) and its format-free
 plug-in wrappers:
 
-- **G2-Edit** - editor for the Nord G2, and the G2 Alike plug-in
+- **G2-Edit** - editor for the Nord G2, and the G2Alike plug-in
 - **SynthEdit** - generic multi-synth editor
 - **EmuUtility** - E-mu EOS sampler utility
 - **GenBridge** - bridges any CoreAudio device into a DAW

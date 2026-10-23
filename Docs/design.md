@@ -115,7 +115,7 @@ of that, not the whole of it.
 
 - CONTROLLER INPUT: a VST3 host delivers CCs as PARAMETER changes, through IMidiMapping - there are no
   CC input events. Hearing arbitrary controllers means mapping them onto (hidden) parameters, the way
-  G2 Alike maps the mod wheel, aftertouch and bend. A SynthLib question: the contract maps a fixed set.
+  G2Alike maps the mod wheel, aftertouch and bend. A SynthLib question: the contract maps a fixed set.
 - CONTROLLER OUTPUT: Live forwards a VST3's notes but not its CCs or bend (§5). Generated controllers
   for Live would need another route - a virtual CoreMIDI port of the plug-in's own, which a Live track
   can take as MIDI input; MidiSyncTool already schedules MIDI to a port against the host's timeline.
