@@ -143,7 +143,7 @@ INCLUDES=(-I"$HERE/src" -I"$HERE/vst3" -I"$SL/src" -I"$SL/audio" -I"$SL/plugin"
 VST3_INCLUDES=(-I"$SDK")
 
 ARCHS=(-arch arm64 -arch x86_64)
-MIN=-mmacosx-version-min=11.5
+MIN=-mmacosx-version-min=12.0
 
 COMMON_LIBS=(-framework CoreFoundation -framework CoreAudio -framework CoreMIDI -framework Cocoa
              -framework Metal -framework QuartzCore)
@@ -269,7 +269,7 @@ build_vst3() {
     <key>CFBundleShortVersionString</key><string>$MSQ_VERSION</string>
     <key>CFBundleVersion</key><string>$MSQ_VERSION</string>
     <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
-    <key>LSMinimumSystemVersion</key><string>11.5</string>
+    <key>LSMinimumSystemVersion</key><string>12.0</string>
 </dict>
 </plist>
 PLIST
@@ -322,7 +322,7 @@ build_au() {
     <key>CFBundleShortVersionString</key><string>$MSQ_VERSION</string>
     <key>CFBundleVersion</key><string>$MSQ_VERSION</string>
     <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
-    <key>LSMinimumSystemVersion</key><string>11.5</string>
+    <key>LSMinimumSystemVersion</key><string>12.0</string>
     <key>AudioComponents</key>
     <array>
         <dict>
