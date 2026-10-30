@@ -15,7 +15,7 @@ set -e
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 SDK="${VST3_SDK:-$HOME/Documents/vst3sdk}"
-SL="${SYNTHLIB_DIR:-$HERE/SynthLib}"
+SL="${SYNTHLIB_DIR:-$HERE/../SynthLib}"
 
 FORMATS=()
 INSTALL=1
@@ -92,7 +92,8 @@ SOURCES=(
     "$SL/plugin/synthlibLog.c"
     "$HERE/src/msqLoop.c"
     "$HERE/vst3/msqPlugin.c"
-    "$SL/plugin/pluginStubs.c"
+    "$SL/plugin/synthlibPluginRegistry.c"
+    "$SL/src/synthlibGlobals.c"
     "$SL/plugin/synthlibPluginState.c"
     "$SL/src/synthlibHost.c"
     "$SL/src/utils.c"
@@ -297,9 +298,16 @@ build_au() {
     for src in "${AU_OBJC_SOURCES[@]}"; do
         local obj="$OBJDIR/au_$(basename "${src%.*}").om"
         clang $ARCHS $MIN -O2 -std=gnu11 -fobjc-arc "${WARNFLAGS[@]}" "${DEFS[@]}" "${INCLUDES[@]}" \
-              -DSYNTHLIB_AU_VIEW_CLASS=$AU_VIEW_CLASS -x objective-c -c "$src" -o "$obj"
+              -x objective-c -c "$src" -o "$obj"
         objects+=("$obj")
     done
+
+    # The one class that must be compiled into the product - see synthlibAuViewFactory.h
+    local factory="$OBJDIR/auViewFactory.m"
+    print "#import \"synthlibAuViewFactory.h\"\nSYNTHLIB_AU_VIEW_FACTORY($AU_VIEW_CLASS)" > "$factory"
+    clang $ARCHS $MIN -O2 -std=gnu11 -fobjc-arc "${WARNFLAGS[@]}" "${DEFS[@]}" "${INCLUDES[@]}" \
+              -x objective-c -c "$factory" -o "$OBJDIR/au_auViewFactory.om"
+    objects+=("$OBJDIR/au_auViewFactory.om")
 
     rm -rf "$out"
     mkdir -p "$out/Contents/MacOS"
